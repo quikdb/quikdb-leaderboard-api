@@ -8,7 +8,7 @@ The Leaderboard API provides **read-only** access to node reputation scores, ran
 
 ## Features
 
-- ✅ **Public API** - No authentication required
+- 🔐 **API Key Authentication** - Secure access with API key
 - 📊 **Real-time Rankings** - Updated every 60 seconds
 - 🚀 **High Performance** - Cached data with rate limiting
 - 🔒 **Read-Only** - No write access to database
@@ -51,11 +51,57 @@ yarn start
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MONGODB_URI` | ✅ | - | MongoDB connection string |
-| `PORT` | | `3001` | Server port |
-| `NODE_ENV` | | `development` | Environment mode |
+| `PORT` | ✅ | - | Server port |
+| `NODE_ENV` | ✅ | - | Environment mode |
+| `API_KEY` | ✅ | - | API key for authentication |
 | `CORS_ALLOWED_ORIGINS` | | See .env.example | Comma-separated allowed origins |
 | `RATE_LIMIT_MAX` | | `200` | Max requests per minute |
 | `LEADERBOARD_UPDATE_INTERVAL_MS` | | `60000` | Cache refresh interval (ms) |
+
+## Authentication
+
+All endpoints except `/health` and `/metrics` require API key authentication.
+
+**Methods:**
+
+1. **Header** (Recommended):
+   ```http
+   X-API-Key: your-api-key-here
+   ```
+
+2. **Query Parameter**:
+   ```http
+   ?api_key=your-api-key-here
+   ```
+
+**Example:**
+
+```bash
+# Using header
+curl -H "X-API-Key: b3c8054738d7c0e1509b781ee6f50ca4ba6e" \
+  http://localhost:3001/leaderboard
+
+# Using query parameter
+curl "http://localhost:3001/leaderboard?api_key=b3c8054738d7c0e1509b781ee6f50ca4ba6e"
+```
+
+**Error Responses:**
+
+```json
+// Missing API key
+{
+  "success": false,
+  "error": "API key is required",
+  "message": "Provide API key in X-API-Key header or api_key query parameter"
+}
+
+// Invalid API key
+{
+  "success": false,
+  "error": "Invalid API key",
+  "message": "The provided API key is not valid"
+}
+```
 
 ## API Endpoints
 
