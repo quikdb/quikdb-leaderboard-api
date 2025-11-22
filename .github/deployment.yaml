@@ -1,0 +1,84 @@
+# Kubernetes Deployment for QuikDB Leaderboard API
+# Uses shared ALB Ingress for external access
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaderboard-api
+  namespace: default
+  labels:
+    app: leaderboard-api
+    service: quikdb
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3001
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  selector:
+    app: leaderboard-api
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderboard-api
+  namespace: default
+  labels:
+    app: leaderboard-api
+    service: quikdb
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: leaderboard-api
+  template:
+    metadata:
+      labels:
+        app: leaderboard-api
+        service: quikdb
+    spec:
+      containers:
+      - name: leaderboard-api
+        image: 047218031589.dkr.ecr.us-east-1.amazonaws.com/quikdb-ecr:leaderboard-api-latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3001
+          name: http
+        
+        # Load ALL environment variables from the secret
+        envFrom:
+        - secretRef:
+            name: leaderboard-api-secrets
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      
+      # Restart policy
+      restartPolicy: Always
