@@ -25,7 +25,7 @@ echo -e "${BLUE}========================================${NC}"
 
 # Step 1: Build Docker image
 echo -e "\n${GREEN}[1/5] Building Docker image...${NC}"
-docker build -t ${IMAGE_TAG} .
+docker build --platform linux/amd64 -t ${IMAGE_TAG} .
 
 # Step 2: Tag for ECR
 echo -e "\n${GREEN}[2/5] Tagging image for ECR...${NC}"

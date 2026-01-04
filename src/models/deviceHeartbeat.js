@@ -172,9 +172,6 @@ const deviceHeartbeatSchema = new mongoose.Schema({
 // Compound index for efficient querying
 deviceHeartbeatSchema.index({ deviceId: 1, timestamp: -1 });
 
-// TTL index for automatic deletion after 7 days
-deviceHeartbeatSchema.index({ timestamp: 1 }, { expireAfterSeconds: 604800 });
-
 const DeviceHeartbeat = mongoose.model('DeviceHeartbeat', deviceHeartbeatSchema);
 
 module.exports = DeviceHeartbeat;

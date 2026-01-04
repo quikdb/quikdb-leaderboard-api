@@ -119,15 +119,11 @@ class LeaderboardService {
         return;
       }
 
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
       // MongoDB aggregation pipeline to calculate reputation scores
       const leaderboard = await DeviceHeartbeat.aggregate([
-        // 1) Window: last 7 days
-        { $match: { timestamp: { $gte: sevenDaysAgo } } },
-
-        // 2) Bucket by hour to count DISTINCT online hours (fair availability)
+        // 1) Bucket by hour to count DISTINCT online hours (fair availability)
         {
           $addFields: {
             hourBucket: { $dateTrunc: { date: '$timestamp', unit: 'hour' } },
@@ -135,7 +131,7 @@ class LeaderboardService {
           },
         },
 
-        // 3) Group by device, compute metrics
+        // 2) Group by device, compute metrics
         {
           $group: {
             _id: '$deviceId',
@@ -211,7 +207,7 @@ class LeaderboardService {
           },
         },
 
-        // 4) Lookup device info once (name/country/createdAt/walletAddress)
+        // 3) Lookup device info once (name/country/createdAt/walletAddress)
         {
           $lookup: {
             from: 'devices',
@@ -225,16 +221,17 @@ class LeaderboardService {
           walletAddress: { $arrayElemAt: ['$deviceInfoArr.walletAddress', 0] }
         } },
 
-        // 5) Derived metrics + scores
+        // 4) Derived metrics + scores
         {
           $addFields: {
-            // Hours online over 7d (0..168)
-            hoursOnline7d: { $size: { $ifNull: ['$hoursOnlineSet', []] } },
-            hoursOnlinePerDay: { $divide: [{ $ifNull: ['$hoursOnline7d', 0] }, 7] },
-
-            // Days in window
-            daysInWindow: {
+            // Hours online over full history
+            distinctOnlineHours: { $size: { $ifNull: ['$hoursOnlineSet', []] } },
+            daysObserved: {
               $max: [{ $divide: [{ $subtract: ['$lastSeen', '$firstSeen'] }, 86400000] }, 0],
+            },
+            normalizedDaysObserved: { $max: ['$daysObserved', 1] },
+            hoursOnlinePerDay: {
+              $divide: [{ $ifNull: ['$distinctOnlineHours', 0] }, { $max: ['$daysObserved', 1] }],
             },
 
             // Recency
@@ -287,7 +284,7 @@ class LeaderboardService {
           },
         },
 
-        // 6) Component scores — REBALANCED WEIGHTS (sum = 100)
+        // 5) Component scores — REBALANCED WEIGHTS (sum = 100)
         {
           $addFields: {
             // AVAILABILITY (0..45): distinct hours online dominates rank
@@ -297,7 +294,7 @@ class LeaderboardService {
                 0,
                 {
                   $multiply: [
-                    { $min: [{ $divide: [{ $ifNull: ['$hoursOnline7d', 0] }, 154] }, 1] }, // full ~22h/day (154/168)
+                    { $min: [{ $divide: [{ $ifNull: ['$hoursOnlinePerDay', 0] }, 22] }, 1] }, // target ~22h/day
                     45,
                   ],
                 },
@@ -352,7 +349,15 @@ class LeaderboardService {
                 {
                   $multiply: [
                     {
-                      $min: [{ $divide: [{ $ifNull: ['$hoursOnline7d', 0] }, { $multiply: [168, 0.8] }] }, 1],
+                      $min: [
+                        {
+                          $divide: [
+                            { $ifNull: ['$distinctOnlineHours', 0] },
+                            { $max: [{ $multiply: [{ $ifNull: ['$normalizedDaysObserved', 1] }, 24, 0.8] }, 1] },
+                          ],
+                        },
+                        1,
+                      ],
                     },
                     12,
                   ],
@@ -377,7 +382,7 @@ class LeaderboardService {
           },
         },
 
-        // 7) Final reputation (rounded first to ensure status alignment)
+        // 6) Final reputation (rounded first to ensure status alignment)
         // TOP-DOWN MODEL: New nodes start at 100, then degrade based on performance
         {
           $addFields: {
@@ -406,7 +411,7 @@ class LeaderboardService {
           },
         },
 
-        // 8) Assign rank badge and status based on rounded score
+        // 7) Assign rank badge and status based on rounded score
         // TOP-DOWN MODEL: Start at excellent, degrade down based on performance decay
         {
           $addFields: {
@@ -484,19 +489,20 @@ class LeaderboardService {
           },
         },
 
-        // 9) Sort with tie-breakers: reputation, then availability (coverage), then more recent
+        // 8) Sort with tie-breakers: reputation, then availability (coverage), then more recent
         { $sort: { reputationScore: -1, availabilityScore: -1, hoursSinceLastSeen: 1 } },
 
-        // 10) Rank ALL nodes
+        // 9) Rank ALL nodes
         { $group: { _id: null, nodes: { $push: '$$ROOT' } } },
         { $unwind: { path: '$nodes', includeArrayIndex: 'rank' } },
         { $addFields: { 'nodes.rank': { $add: ['$rank', 1] } } },
         { $replaceRoot: { newRoot: '$nodes' } },
 
-        // 11) Project EXACT shape frontend expects
+        // 10) Project EXACT shape frontend expects
         {
           $project: {
             totalHeartbeats: 1,
+            totalHeartbeatsAllTime: '$totalHeartbeats',
             lastSeen: 1,
             maxUptime: 1,
             cappedMaxUptime: 1,
@@ -527,7 +533,20 @@ class LeaderboardService {
             activityScore: {
               $round: [
                 {
-                  $multiply: [{ $min: [{ $divide: ['$hoursOnline7d', 168] }, 1] }, 10],
+                  $multiply: [
+                    {
+                      $min: [
+                        {
+                          $divide: [
+                            { $ifNull: ['$distinctOnlineHours', 0] },
+                            { $max: [{ $multiply: [{ $ifNull: ['$normalizedDaysObserved', 1] }, 24] }, 1] },
+                          ],
+                        },
+                        1,
+                      ],
+                    },
+                    10,
+                  ],
                 },
                 2,
               ],
@@ -551,9 +570,9 @@ class LeaderboardService {
             },
 
             // time/volume helpers
-            // NOTE: firstSeen comes from 7-day heartbeat window, not lifetime
-            daysInSevenDayWindow: { $round: [{ $divide: [{ $subtract: ['$$NOW', '$firstSeen'] }, 86400000] }, 1] },
-            totalHeartbeatsSevenDays: '$totalHeartbeats',
+            daysObserved: { $round: ['$normalizedDaysObserved', 1] },
+            // Legacy naming retained for compatibility; now represents lifetime days seen
+            daysInSevenDayWindow: { $round: ['$normalizedDaysObserved', 1] },
             // For true lifetime metrics, use deviceInfo.createdAt
             daysSinceRegistration: {
               $cond: [
@@ -687,7 +706,7 @@ class LeaderboardService {
       },
       activityScore: {
         unit: 'points',
-        description: 'Activity coverage (0-10) based on distinct online hours over 7 days',
+        description: 'Activity coverage (0-10) based on distinct online hours per observed day (lifetime)',
         displayName: 'Activity',
         decimals: 2,
       },
