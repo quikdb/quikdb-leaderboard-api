@@ -39,13 +39,7 @@ spec:
         app: leaderboard-api
         service: quikdb
     spec:
-      # Tolerate compute-intensive nodes
-      tolerations:
-      - key: "compute-intensive"
-        operator: "Equal"
-        value: "true"
-        effect: "NoSchedule"
-      
+      # No tolerations - run on platform nodes
       containers:
       - name: leaderboard-api
         image: 047218031589.dkr.ecr.us-east-1.amazonaws.com/quikdb-ecr:leaderboard-api-latest

@@ -7,11 +7,20 @@ set -e
 # Configuration
 AWS_REGION="us-east-1"
 AWS_ACCOUNT_ID="047218031589"
-AWS_PROFILE="quikdb-dev"
 ECR_REPOSITORY="quikdb-ecr"
 IMAGE_TAG="leaderboard-api-latest"
 NAMESPACE="default"
 DEPLOYMENT_FILE=".github/deployment.yaml"
+
+# Environment (default to dev)
+ENVIRONMENT="${1:-dev}"
+
+# Set AWS profile only if not in CI (GitHub Actions sets CI=true)
+if [ "${CI}" = "true" ]; then
+  unset AWS_PROFILE  # Don't use profiles in CI
+else
+  AWS_PROFILE="quikdb-${ENVIRONMENT}"
+fi
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -34,8 +43,14 @@ docker tag ${IMAGE_TAG} ${ECR_IMAGE}
 
 # Step 3: Login to ECR
 echo -e "\n${GREEN}[3/5] Logging in to ECR...${NC}"
-aws ecr get-login-password --region ${AWS_REGION} --profile ${AWS_PROFILE} | \
-  docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+# Use profile if set, otherwise use default credentials (for CI/CD)
+if [ -n "${AWS_PROFILE}" ] && [ "${AWS_PROFILE}" != "default" ]; then
+  aws ecr get-login-password --region ${AWS_REGION} --profile ${AWS_PROFILE} | \
+    docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+else
+  aws ecr get-login-password --region ${AWS_REGION} | \
+    docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+fi
 
 # Step 4: Push to ECR
 echo -e "\n${GREEN}[4/5] Pushing image to ECR...${NC}"

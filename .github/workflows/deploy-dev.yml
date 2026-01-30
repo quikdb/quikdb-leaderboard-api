@@ -1,0 +1,58 @@
+name: Deploy Leaderboard API Dev
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 047218031589
+  ECR_REPOSITORY: quikdb-ecr
+  IMAGE_TAG: leaderboard-api-latest
+  EKS_CLUSTER_NAME: backend-dev-quikdb-eks
+  NAMESPACE: default
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.28.0'
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Delete old pods to free resources
+        run: |
+          echo "Deleting old leaderboard-api pods..."
+          kubectl delete pods -n ${{ env.NAMESPACE }} -l app=leaderboard-api --ignore-not-found=true
+          sleep 10
+        continue-on-error: true
+
+      - name: Run deployment script
+        run: |
+          chmod +x deploy.sh
+          ./deploy.sh dev
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
