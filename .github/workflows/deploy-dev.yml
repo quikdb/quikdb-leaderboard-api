@@ -42,13 +42,6 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --name ${{ env.EKS_CLUSTER_NAME }}
 
-      - name: Delete old pods to free resources
-        run: |
-          echo "Deleting old leaderboard-api pods..."
-          kubectl delete pods -n ${{ env.NAMESPACE }} -l app=leaderboard-api --ignore-not-found=true
-          sleep 10
-        continue-on-error: true
-
       - name: Run deployment script
         run: |
           chmod +x deploy.sh

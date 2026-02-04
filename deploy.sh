@@ -60,11 +60,11 @@ docker push ${ECR_IMAGE}
 echo -e "\n${GREEN}[5/5] Deploying to EKS...${NC}"
 kubectl apply -f ${DEPLOYMENT_FILE} --namespace=${NAMESPACE}
 
-# Wait for rollout
-echo -e "\n${BLUE}Waiting for deployment to complete...${NC}"
-kubectl rollout status deployment/leaderboard-api --namespace=${NAMESPACE} --timeout=5m
+# Trigger rollout restart to pick up new image
+echo -e "\n${BLUE}Triggering rollout restart...${NC}"
+kubectl delete pods -l app=leaderboard-api --ignore-not-found=true --namespace=${NAMESPACE}
 
-# Show deployment status
+# Show deployment status (without waiting)
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}Deployment Status${NC}"
 echo -e "${GREEN}========================================${NC}"
